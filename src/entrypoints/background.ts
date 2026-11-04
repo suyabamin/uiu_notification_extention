@@ -1,13 +1,19 @@
 import { storage } from '@/core/storage';
 import { scheduler } from '@/core/scheduler';
 import { logger } from '@/core/logger';
+import { notificationManager } from '@/core/notifications';
+import { generateSyntheticChange } from '@/core/diff';
 import { isValidSender, MessageType } from '@/shared/messaging';
 
 export default defineBackground(() => {
+  // Initialize notification click/button listeners
+  notificationManager.init();
+
   // On extension install or update
   chrome.runtime.onInstalled.addListener(async (details) => {
     await storage.init();
     await scheduler.setup();
+    await notificationManager.updateBadge();
     await logger.info(`UIU Notification installed/updated: ${details.reason}`);
   });
 
@@ -15,6 +21,7 @@ export default defineBackground(() => {
   chrome.runtime.onStartup.addListener(async () => {
     await storage.init();
     await scheduler.setup();
+    await notificationManager.updateBadge();
     await logger.info('UIU Notification started on browser startup');
   });
 
@@ -104,6 +111,15 @@ async function handleUiMessage(
       case MessageType.GET_PORTAL_STATUS: {
         const statuses = await storage.getAllPortalStatuses();
         sendResponse({ statuses });
+        break;
+      }
+
+      case MessageType.SIMULATE_CHANGE: {
+        const payload = message.payload as { portal?: 'elms' | 'ucam'; kind?: never } | undefined;
+        const change = generateSyntheticChange(payload?.portal, payload?.kind);
+        await storage.appendChanges([change]);
+        await notificationManager.dispatch([change]);
+        sendResponse({ ok: true, change });
         break;
       }
 
